@@ -5,7 +5,7 @@ from datetime import datetime
 with DAG(
     dag_id="hello_pods",
     start_date=datetime(2025, 8, 14),
-    schedule=None,  # replaces old schedule_interval
+    schedule=None,
     catchup=False,
 ) as dag:
 
@@ -17,6 +17,7 @@ with DAG(
         cmds=["python", "-c"],
         arguments=["print('Hello from Kubernetes Pod')"],
         is_delete_operator_pod=True,
+        kubernetes_conn_id="kubernetes_default"  # Explicit connection
     )
 
     hello_task
