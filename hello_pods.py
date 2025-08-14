@@ -3,20 +3,20 @@ from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperato
 from datetime import datetime
 
 with DAG(
-    dag_id="hello_async_pods",
-    schedule_interval=None,
-    start_date=datetime(2023, 1, 1),
+    dag_id="hello_pods",
+    start_date=datetime(2025, 8, 14),
+    schedule=None,  # replaces old schedule_interval
     catchup=False,
-    tags=["example"],
 ) as dag:
 
-    task = KubernetesPodOperator(
-        task_id="run-async-pod",
-        name="async-hello",
-        namespace="airflow",
-        image="python:3.9",
+    hello_task = KubernetesPodOperator(
+        task_id="hello-task",
+        name="hello-pod",
+        namespace="airflowdags",
+        image="python:3.9-slim",
         cmds=["python", "-c"],
-        arguments=["print('Hello from a pod!')"],
+        arguments=["print('Hello from Kubernetes Pod')"],
         is_delete_operator_pod=True,
-        get_logs=True,
     )
+
+    hello_task
