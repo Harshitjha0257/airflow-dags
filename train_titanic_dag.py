@@ -1,40 +1,46 @@
-import os
-import requests
-import pandas as pd
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
+import os
+import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 import pickle
+import urllib.request
 
 # Writable directories
-DATA_DIR = "/opt/airflow/dags/data"
-MODEL_DIR = "/opt/airflow/dags/models"
+DATA_DIR = "/tmp/airflow/data"
+MODEL_DIR = "/tmp/airflow/models"
 
 RAW_DATA_FILE = os.path.join(DATA_DIR, "titanic.csv")
 PROCESSED_DATA_FILE = os.path.join(DATA_DIR, "titanic_processed.csv")
 MODEL_FILE = os.path.join(MODEL_DIR, "titanic_model.pkl")
 
-TITANIC_URL = "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv"
+# Ensure directories exist
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(MODEL_DIR, exist_ok=True)
 
-def preprocess():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    os.makedirs(MODEL_DIR, exist_ok=True)
-
-    # Download dataset if missing
+# Function to download the Titanic dataset if it doesn't exist
+def download_dataset():
     if not os.path.exists(RAW_DATA_FILE):
-        r = requests.get(TITANIC_URL)
-        r.raise_for_status()
-        with open(RAW_DATA_FILE, "wb") as f:
-            f.write(r.content)
+        url = "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv"
+        print(f"Downloading dataset from {url}...")
+        urllib.request.urlretrieve(url, RAW_DATA_FILE)
+        print(f"Saved dataset to {RAW_DATA_FILE}")
+    else:
+        print(f"Dataset already exists at {RAW_DATA_FILE}")
 
+# Function to preprocess the Titanic dataset
+def preprocess():
+    download_dataset()
     df = pd.read_csv(RAW_DATA_FILE)
     df['Sex'] = df['Sex'].map({'male': 0, 'female': 1})
     df.fillna(0, inplace=True)
     df.to_csv(PROCESSED_DATA_FILE, index=False)
+    print(f"Preprocessed dataset saved at {PROCESSED_DATA_FILE}")
 
+# Function to train the model
 def train_model():
     df = pd.read_csv(PROCESSED_DATA_FILE)
     X = df.drop("Survived", axis=1)
@@ -45,15 +51,15 @@ def train_model():
     preds = model.predict(X_test)
     acc = accuracy_score(y_test, preds)
     print(f"Model Accuracy: {acc}")
-
-    os.makedirs(MODEL_DIR, exist_ok=True)
     with open(MODEL_FILE, "wb") as f:
         pickle.dump(model, f)
+    print(f"Model saved at {MODEL_FILE}")
 
+# Define the DAG
 with DAG(
     dag_id="train_titanic_dag",
     start_date=datetime(2025, 9, 17),
-    schedule="@daily",
+    schedule="@daily",  # modern Airflow uses 'schedule'
     catchup=False,
     tags=["ml", "titanic"]
 ) as dag:
