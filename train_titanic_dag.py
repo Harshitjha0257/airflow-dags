@@ -5,9 +5,11 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
-import pickle
+import itertools
 import os
 import urllib.request
+import mlflow
+import mlflow.sklearn
 
 # Writable directories
 DATA_DIR = "/tmp/airflow/data"
@@ -15,7 +17,7 @@ MODEL_DIR = "/tmp/airflow/models"
 
 RAW_DATA_FILE = os.path.join(DATA_DIR, "titanic.csv")
 PROCESSED_DATA_FILE = os.path.join(DATA_DIR, "titanic_processed.csv")
-MODEL_FILE = os.path.join(MODEL_DIR, "titanic_model.pkl")
+MODEL_FILE = os.path.join(MODEL_DIR, "titanic_model")
 
 # Ensure directories exist
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -56,28 +58,49 @@ def preprocess():
     df.to_csv(PROCESSED_DATA_FILE, index=False)
     print(f"Preprocessed dataset saved at {PROCESSED_DATA_FILE}")
 
-# Function to train model
-def train_model():
+# Function for hyperparameter tuning + MLflow autologging
+def hyperparameter_tuning():
     df = pd.read_csv(PROCESSED_DATA_FILE)
-
     X = df.drop("Survived", axis=1)
     y = df["Survived"]
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
+    # Set MLflow experiment
+    mlflow.set_experiment("Titanic_Hyperparameter_Tuning")
 
-    preds = model.predict(X_test)
-    acc = accuracy_score(y_test, preds)
-    print(f"Model Accuracy: {acc}")
+    param_grid = {
+        "n_estimators": [50, 100],
+        "max_depth": [3, 5, None],
+        "min_samples_split": [2, 5]
+    }
 
-    # Save model
-    with open(MODEL_FILE, "wb") as f:
-        pickle.dump(model, f)
-    print(f"Model saved at {MODEL_FILE}")
+    best_accuracy = 0.0
+    best_model = None
+    best_params = None
+
+    with mlflow.start_run(run_name="titanic_rf_tuning") as parent_run:
+        for params in itertools.product(*param_grid.values()):
+            param_dict = dict(zip(param_grid.keys(), params))
+
+            with mlflow.start_run(nested=True):
+                mlflow.sklearn.autolog()  # <-- autolog enabled
+                clf = RandomForestClassifier(**param_dict, random_state=42)
+                clf.fit(X_train, y_train)
+                preds = clf.predict(X_test)
+                acc = accuracy_score(y_test, preds)
+
+                mlflow.log_params(param_dict)
+                mlflow.log_metric("accuracy", acc)
+
+                if acc > best_accuracy:
+                    best_accuracy = acc
+                    best_model = clf
+                    best_params = param_dict
+
+        # Save best model as artifact
+        mlflow.sklearn.log_model(best_model, artifact_path="best_model")
+        print(f"Best model params: {best_params}, Accuracy: {best_accuracy}")
 
 # Define DAG
 with DAG(
@@ -98,10 +121,11 @@ with DAG(
         python_callable=preprocess
     )
 
-    train_task = PythonOperator(
-        task_id="train_model",
-        python_callable=train_model
+    tuning_task = PythonOperator(
+        task_id="hyperparameter_tuning",
+        python_callable=hyperparameter_tuning
     )
 
     # Task dependencies
-    download_task >> preprocess_task >> train_task
+    download_task >> preprocess_task >> tuning_task
+
