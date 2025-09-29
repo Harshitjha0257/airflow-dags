@@ -19,12 +19,10 @@ RAW_DATA_FILE = os.path.join(DATA_DIR, "titanic.csv")
 PROCESSED_DATA_FILE = os.path.join(DATA_DIR, "titanic_processed.csv")
 MODEL_FILE = os.path.join(MODEL_DIR, "titanic_model")
 
-# Ensure directories exist
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(MODEL_DIR, exist_ok=True)
 
 # Function to download dataset
 def download_dataset():
+    os.makedirs(DATA_DIR, exist_ok=True)  # ensure folder exists
     url = "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv"
     if not os.path.exists(RAW_DATA_FILE):
         print(f"Downloading dataset from {url}...")
@@ -33,8 +31,10 @@ def download_dataset():
     else:
         print(f"Dataset already exists at {RAW_DATA_FILE}")
 
+
 # Function to preprocess dataset
 def preprocess():
+    os.makedirs(MODEL_DIR, exist_ok=True)  # ensure folder exists
     df = pd.read_csv(RAW_DATA_FILE)
 
     # Encode 'Sex'
@@ -57,6 +57,7 @@ def preprocess():
     # Save preprocessed data
     df.to_csv(PROCESSED_DATA_FILE, index=False)
     print(f"Preprocessed dataset saved at {PROCESSED_DATA_FILE}")
+
 
 # Function for hyperparameter tuning + MLflow autologging
 def hyperparameter_tuning():
@@ -84,7 +85,7 @@ def hyperparameter_tuning():
             param_dict = dict(zip(param_grid.keys(), params))
 
             with mlflow.start_run(nested=True):
-                mlflow.sklearn.autolog()  # <-- autolog enabled
+                mlflow.sklearn.autolog()
                 clf = RandomForestClassifier(**param_dict, random_state=42)
                 clf.fit(X_train, y_train)
                 preds = clf.predict(X_test)
@@ -101,6 +102,7 @@ def hyperparameter_tuning():
         # Save best model as artifact
         mlflow.sklearn.log_model(best_model, artifact_path="best_model")
         print(f"Best model params: {best_params}, Accuracy: {best_accuracy}")
+
 
 # Define DAG
 with DAG(
@@ -128,4 +130,3 @@ with DAG(
 
     # Task dependencies
     download_task >> preprocess_task >> tuning_task
-
